@@ -1,60 +1,32 @@
-
 package endf
 
 import (
-	"io"
 	"bufio"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
 )
 
-type TokType int
-
-const (
-	TokError TokType = iota + 1
-	TokEOF
-	TokContent
-	TokMAT
-	TokMF
-	TokMT
-	TokNewline
-)
-
-func (t *TokType) String() {
-	switch {
-	case TokError:
-		return "ERROR"
-	case TokEOF:
-		return "EOF"
-	case TokContent:
-		return "CONTENT"
-	case TokMAT:
-		return "MAT"
-	case TokMF:
-		return "MF"
-	case TokMT:
-		return "MT"
-	case TokNewline:
-		return "NEWLINE"
-	default:
-		return "UNKNOWN"
-	}
+// intermediate type for parsing
+type Record struct {
+	Content string
+	MAT     int
+	MF      int
+	MT      int
 }
 
-type Token struct {
-	Type TokType
-	Val string
-}
-
-type Lexer {
-	s *bufio.Scanner
-	Tokens chan Token
-	r io.ReadCloser
+type Lexer struct {
+	s       *bufio.Scanner
+	Records chan *Record
+	r       io.ReadCloser
 }
 
 func NewLexer(r io.ReadCloser) *Lexer {
 	l := &Lexer{
-		s: bufio.NewScanner(r),
-		r: r,
-		Tokens: make(chan Token),
+		s:       bufio.NewScanner(r),
+		r:       r,
+		Records: make(chan *Record),
 	}
 	go l.run()
 	return l
@@ -62,25 +34,34 @@ func NewLexer(r io.ReadCloser) *Lexer {
 
 func (l *Lexer) run() {
 	for l.s.Scan() {
-		l.lexLine(scanner.Text())
+		l.lexLine(l.s.Text())
 	}
-	if err := scanner.Err(); err != nil {
-		l.emit(TokError, err.String())
+	if err := l.s.Err(); err != nil {
+		l.Records <- &Record{Content: fmt.Sprintf("ERROR: %v", err)}
 	}
-	l.emit(TokEOF, "")
-	close(l.Tokens)
+	close(l.Records)
 	l.r.Close()
 }
 
 func (l *Lexer) lexLine(text string) {
-	l.emit(TokContent, text[:66])
-	l.emit(TokMAT, text[66:70])
-	l.emit(TokMF, text[70:72])
-	l.emit(TokMT, text[72:75])
-	l.emit(TokNewline, "\n")
+	content := text[:66]
+	mat := must(strconv.Atoi(strings.TrimSpace(text[66:70])))
+	mf := must(strconv.Atoi(strings.TrimSpace(text[70:72])))
+	mt := must(strconv.Atoi(strings.TrimSpace(text[72:75])))
+
+	r := &Record{
+		Content: content,
+		MAT:     mat,
+		MF:      mf,
+		MT:      mt,
+	}
+
+	l.Records <- r
 }
 
-func (l *Lexer) emit(t TokType, val string) {
-	l.Tokens <- Token{Type: t, Val: val}
+func must(v int, err error) int {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }
-

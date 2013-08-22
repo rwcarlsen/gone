@@ -1,7 +1,7 @@
 package endf
 
 import (
-	"strconv"
+	"errors"
 )
 
 type Tape struct {
@@ -25,67 +25,29 @@ type Section struct {
 	Records []string
 }
 
-// intermediate type for parsing
-type record struct {
-	Content string
-	MAT     int
-	MF      int
-	MT      int
-}
-
-func Parse(ch chan Token) (*Tape, error) {
-	// construct record entries
-	records := make([]*record, 0)
-	for {
-		text := <-ch
-		if text.Type == TokEOF {
-			break
-		}
-
-		mat := <-ch
-		if mat.Type == TokEOF {
-			return nil, errors.New("endf: unexpected EOF")
-		}
-		matid, err := strconv.Atoi(mat)
-		if err != nil {
-			return nil, fmt.Errorf("endf: %v is not a valid id")
-		}
-
-		mf := <-ch
-		if mat.Type == TokEOF {
-			return nil, errors.New("endf: unexpected EOF")
-		}
-		mfid, err := strconv.Atoi(mf)
-		if err != nil {
-			return nil, fmt.Errorf("endf: %v is not a valid id")
-		}
-
-		mt := <-ch
-		if mat.Type == TokEOF {
-			return nil, errors.New("endf: unexpected EOF")
-		}
-		mtid, err := strconv.Atoi(mt)
-		if err != nil {
-			return nil, fmt.Errorf("endf: %v is not a valid id")
-		}
-
-		records = append(records, &record{text, matid, mfid, mtid})
+func Parse(ch chan *Record) (*Tape, error) {
+	header, ok := <-ch
+	if !ok {
+		return nil, errors.New("endf: Unexpected EOF")
 	}
 
-	header := records[0]
-	mats := buildMats(records[1:])
+	mats, err := buildMats(ch)
+	if err != nil {
+		return nil, err
+	}
+
 	tape := &Tape{Id: header.MAT, Comment: header.Content, Materials: mats}
 	return tape, nil
 }
 
-func buildMats(records []*record) []*Material {
-	currMat := make(Material)
-	currFile := make(File)
-	currSec := make(Section)
+func buildMats(ch chan *Record) ([]*Material, error) {
+	currMat := new(Material)
+	currFile := new(File)
+	currSec := new(Section)
 	mats := make([]*Material, 0)
-	for _, r := range records {
+	for r := range ch {
 		if r.MAT == -1 {
-			break // end of tape
+			return mats, nil
 		} else if r.MAT == 0 {
 			mats = append(mats, currMat)
 			currMat = new(Material)
@@ -101,5 +63,5 @@ func buildMats(records []*record) []*Material {
 		}
 	}
 
-	return mats
+	return nil, errors.New("endf: Unexpected EOF")
 }
