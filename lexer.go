@@ -9,7 +9,7 @@ import (
 type TokType int
 
 const (
-	TokError TokType = iota
+	TokError TokType = iota + 1
 	TokEOF
 	TokContent
 	TokMAT
